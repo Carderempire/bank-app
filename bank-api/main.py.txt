@@ -1,0 +1,71 @@
+# Professional Bank App API (FastAPI) - Ready for Deployment on Render
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from uuid import uuid4
+from typing import Dict
+
+app = FastAPI(title="Bank App with USD Virtual Accounts")
+
+# In-memory databases
+users_db: Dict[str, dict] = {}
+accounts_db: Dict[str, dict] = {}
+
+class User(BaseModel):
+    name: str
+    email: str
+
+class Account(BaseModel):
+    user_id: str
+    balance_usd: float = Field(0.0, ge=0.0)
+
+class Transaction(BaseModel):
+    amount: float
+
+@app.post("/users/", summary="Create a new user")
+def create_user(user: User):
+    user_id = str(uuid4())
+    users_db[user_id] = user.dict()
+    return {"user_id": user_id, "message": "User created successfully"}
+
+@app.post("/accounts/", summary="Create a USD virtual account")
+def create_account(account: Account):
+    if account.user_id not in users_db:
+        raise HTTPException(status_code=404, detail="User not found")
+    account_id = str(uuid4())
+    accounts_db[account_id] = {
+        "user_id": account.user_id,
+        "balance_usd": account.balance_usd
+    }
+    return {"account_id": account_id, "message": "USD virtual account created"}
+
+@app.get("/accounts/{account_id}", summary="Get account balance")
+def get_account(account_id: str):
+    account = accounts_db.get(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+@app.post("/accounts/{account_id}/deposit", summary="Deposit to USD virtual account")
+def deposit(account_id: str, transaction: Transaction):
+    amount = transaction.amount
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    account = accounts_db.get(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account['balance_usd'] += amount
+    return {"message": f"Deposited ${amount:.2f} successfully", "new_balance": account['balance_usd']}
+
+@app.post("/accounts/{account_id}/withdraw", summary="Withdraw from USD virtual account")
+def withdraw(account_id: str, transaction: Transaction):
+    amount = transaction.amount
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    account = accounts_db.get(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if account['balance_usd'] < amount:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+    account['balance_usd'] -= amount
+    return {"message": f"Withdrew ${amount:.2f} successfully", "new_balance": account['balance_usd']}
